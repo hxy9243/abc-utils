@@ -150,6 +150,17 @@ npm run build
 
 ---
 
+## Acknowledgements & Attribution
+
+`abc-utils` builds upon the foundational research, algorithms, and tooling developed by the ABC and music informatics open-source communities:
+
+- **[abc2xml](https://wim.vree.org/svgParse/abc2xml.html)** by **Willem G. Vree**: The pioneering reference utility for ABC to MusicXML translation whose parsing logic and musical parity benchmarks inspired this pure TypeScript converter.
+- **[abcjs](https://github.com/paulrosen/abcjs)** by **Paul Rosen** and **Gregory Dyke**: The gold-standard JavaScript ABC rendering, audio playback, and analysis library ([abcjs.net](https://www.abcjs.net)).
+- **[ABC Music Notation Standard (v2.1)](https://abcnotation.com/wiki/abc:standard:v2.1)** by **Chris Walshaw** and the ABC community.
+
+---
+
 ## License
 
 [MIT License](file:///home/kevin/Workspace/abc-utils/LICENSE) © 2026 Kevin
+
