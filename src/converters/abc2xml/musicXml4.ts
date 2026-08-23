@@ -536,11 +536,26 @@ function serializeChord(
     }
     pitchNode.ele('octave', {}, octave);
 
-    const noteDurationRatio = new Rational(chord.duration.numerator, chord.duration.denominator);
-    const wholeDuration = noteDurationRatio.mul(unitLength);
+    const noteDurationRatio = new Rational(note.duration.numerator, note.duration.denominator);
+    let effectiveRatio = noteDurationRatio;
+
+    // Broken rhythm adjustment
+    if (chord.brokenRhythm) {
+      if (chord.brokenRhythm.direction === '>') {
+        const mult = chord.brokenRhythm.count === 1 ? new Rational(3, 2) : chord.brokenRhythm.count === 2 ? new Rational(7, 4) : new Rational(15, 8);
+        effectiveRatio = effectiveRatio.mul(mult);
+      } else {
+        const mult = chord.brokenRhythm.count === 1 ? new Rational(1, 2) : chord.brokenRhythm.count === 2 ? new Rational(1, 4) : new Rational(1, 8);
+        effectiveRatio = effectiveRatio.mul(mult);
+      }
+    }
+
+    const wholeDuration = effectiveRatio.mul(unitLength);
     const quarterDuration = wholeDuration.mul(4);
     const durationTicks = Math.round(quarterDuration.toNumber() * ctx.divisions);
-    chordDurationTicks = durationTicks;
+    if (i === 0) {
+      chordDurationTicks = durationTicks;
+    }
 
     noteNode.ele('duration', {}, durationTicks);
     noteNode.ele('voice', {}, route.voiceNumber);

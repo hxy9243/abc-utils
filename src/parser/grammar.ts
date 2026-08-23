@@ -1,4 +1,5 @@
 import { Token, TokenType } from './tokens.js';
+import { Rational } from '../core/rational.js';
 import {
   AbcTuneAST,
   AbcHeaders,
@@ -304,9 +305,18 @@ export class GrammarParser {
           chord.annotations = [...pendingAnnotations];
           pendingAnnotations = [];
         }
-        if (pendingSlurStarts > 0) {
+        if (pendingSlurStarts > 0 && chord.notes.length > 0) {
           chord.notes[0]!.slurStarts = (chord.notes[0]!.slurStarts ?? 0) + pendingSlurStarts;
           pendingSlurStarts = 0;
+        }
+
+        // Check for broken rhythm following chord (e.g. [ceg]> [dfa])
+        if (this.peek().type === TokenType.BrokenRhythm) {
+          const brToken = this.next();
+          chord.brokenRhythm = {
+            direction: brToken.value.startsWith('>') ? '>' : '<',
+            count: brToken.value.length,
+          };
         }
 
         const measure = getActiveMeasure(currentVoiceId);
@@ -609,18 +619,42 @@ export class GrammarParser {
       this.next();
     }
 
+    let chordMultiplier: AbcDuration = { numerator: 1, denominator: 1 };
     if (this.peek().type === TokenType.ChordEnd) {
-      this.next(); // Consume ']'
+      const chordEndTok = this.next(); // Consume ']' or ']2'
+      const durationStr = (chordEndTok.metadata?.durationStr as string) ?? '';
+      if (durationStr) {
+        chordMultiplier = this.parseDuration(durationStr);
+      }
     }
 
-    // Default duration from first note or 1/1
-    let chordDuration: AbcDuration = notes[0]?.duration ?? { numerator: 1, denominator: 1 };
     let chordTie = false;
 
     // Check for chord-level duration or tie immediately following ']'
     if (this.peek().type === TokenType.Tie) {
       this.next();
       chordTie = true;
+    }
+
+    // Multiply note durations by chordMultiplier according to ABC 2.1 standard
+    if (chordMultiplier.numerator !== 1 || chordMultiplier.denominator !== 1) {
+      const mult = new Rational(chordMultiplier.numerator, chordMultiplier.denominator);
+      for (const note of notes) {
+        const noteDur = new Rational(note.duration.numerator, note.duration.denominator);
+        const effective = noteDur.mul(mult);
+        note.duration = {
+          numerator: effective.num,
+          denominator: effective.den,
+        };
+      }
+    }
+
+    // Default duration from first note or multiplier
+    let chordDuration: AbcDuration;
+    if (notes.length > 0) {
+      chordDuration = { ...notes[0]!.duration };
+    } else {
+      chordDuration = chordMultiplier;
     }
 
     return {

@@ -173,6 +173,10 @@ function stringifyChord(chord: AbcChordAST): string {
   }
   s += ']';
 
+  if (chord.brokenRhythm) {
+    s += chord.brokenRhythm.direction.repeat(chord.brokenRhythm.count);
+  }
+
   if (chord.tie) s += '-';
   return s;
 }

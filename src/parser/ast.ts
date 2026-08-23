@@ -61,6 +61,10 @@ export interface AbcChordAST {
   kind: 'chord';
   notes: AbcNoteAST[];
   duration: AbcDuration;
+  brokenRhythm?: {
+    direction: '>' | '<';
+    count: number;
+  };
   tie?: boolean;
   slurStarts?: number;
   slurEnds?: number;

@@ -149,7 +149,7 @@ K:C
     const ast = parser.parseTune();
     const voice = ast.voices[0]!;
 
-    // Measure 1: chord [CEG]
+    // Measure 1: chord [CEG]2
     const m1Chord = voice.measures[0]!.elements[0]!;
     expect(m1Chord.kind).toBe('chord');
     if (m1Chord.kind === 'chord') {
@@ -157,6 +157,10 @@ K:C
       expect(m1Chord.notes[0]?.pitch.step).toBe('C');
       expect(m1Chord.notes[1]?.pitch.step).toBe('E');
       expect(m1Chord.notes[2]?.pitch.step).toBe('G');
+      expect(m1Chord.duration).toEqual({ numerator: 2, denominator: 1 });
+      expect(m1Chord.notes[0]?.duration).toEqual({ numerator: 2, denominator: 1 });
+      expect(m1Chord.notes[1]?.duration).toEqual({ numerator: 2, denominator: 1 });
+      expect(m1Chord.notes[2]?.duration).toEqual({ numerator: 2, denominator: 1 });
     }
 
     // Measure 2: broken rhythms A>B c<d
@@ -234,6 +238,88 @@ w: Glo- ri- a in
       { text: 'a', type: 'end' },
       { text: 'in', type: 'single' },
     ]);
+  });
 
+  it('should parse chord duration multipliers, ties, and broken rhythms', () => {
+    const abc = `
+X:1
+K:D
+[Adf]2 [Ace]2 | [C2E2G2]2 | [C2E]2 | [CEG]/2 | [CEG]2- [CEG]2 | [CEG]> [DFA] |
+`;
+    const lexer = new Lexer(abc);
+    const parser = new GrammarParser(lexer.tokenize());
+    const ast = parser.parseTune();
+    const voice = ast.voices[0]!;
+
+    // Measure 1: [Adf]2 [Ace]2
+    const m1 = voice.measures[0]!.elements;
+    expect(m1[0]).toMatchObject({
+      kind: 'chord',
+      duration: { numerator: 2, denominator: 1 },
+      notes: [
+        { pitch: { step: 'A', octave: 4 }, duration: { numerator: 2, denominator: 1 } },
+        { pitch: { step: 'D', octave: 5 }, duration: { numerator: 2, denominator: 1 } },
+        { pitch: { step: 'F', octave: 5 }, duration: { numerator: 2, denominator: 1 } },
+      ],
+    });
+    expect(m1[1]).toMatchObject({
+      kind: 'chord',
+      duration: { numerator: 2, denominator: 1 },
+      notes: [
+        { pitch: { step: 'A', octave: 4 }, duration: { numerator: 2, denominator: 1 } },
+        { pitch: { step: 'C', octave: 5 }, duration: { numerator: 2, denominator: 1 } },
+        { pitch: { step: 'E', octave: 5 }, duration: { numerator: 2, denominator: 1 } },
+      ],
+    });
+
+    // Measure 2: [C2E2G2]2 -> 2 * 2 = 4
+    const m2 = voice.measures[1]!.elements;
+    expect(m2[0]).toMatchObject({
+      kind: 'chord',
+      duration: { numerator: 4, denominator: 1 },
+      notes: [
+        { pitch: { step: 'C' }, duration: { numerator: 4, denominator: 1 } },
+        { pitch: { step: 'E' }, duration: { numerator: 4, denominator: 1 } },
+        { pitch: { step: 'G' }, duration: { numerator: 4, denominator: 1 } },
+      ],
+    });
+
+    // Measure 3: [C2E]2 -> C is 4, E is 2
+    const m3 = voice.measures[2]!.elements;
+    expect(m3[0]).toMatchObject({
+      kind: 'chord',
+      duration: { numerator: 4, denominator: 1 },
+      notes: [
+        { pitch: { step: 'C' }, duration: { numerator: 4, denominator: 1 } },
+        { pitch: { step: 'E' }, duration: { numerator: 2, denominator: 1 } },
+      ],
+    });
+
+    // Measure 4: [CEG]/2 -> 1/2
+    const m4 = voice.measures[3]!.elements;
+    expect(m4[0]).toMatchObject({
+      kind: 'chord',
+      duration: { numerator: 1, denominator: 2 },
+      notes: [
+        { pitch: { step: 'C' }, duration: { numerator: 1, denominator: 2 } },
+        { pitch: { step: 'E' }, duration: { numerator: 1, denominator: 2 } },
+        { pitch: { step: 'G' }, duration: { numerator: 1, denominator: 2 } },
+      ],
+    });
+
+    // Measure 5: [CEG]2- [CEG]2
+    const m5 = voice.measures[4]!.elements;
+    expect(m5[0]).toMatchObject({
+      kind: 'chord',
+      duration: { numerator: 2, denominator: 1 },
+      tie: true,
+    });
+
+    // Measure 6: [CEG]> [DFA]
+    const m6 = voice.measures[5]!.elements;
+    expect(m6[0]).toMatchObject({
+      kind: 'chord',
+      brokenRhythm: { direction: '>', count: 1 },
+    });
   });
 });

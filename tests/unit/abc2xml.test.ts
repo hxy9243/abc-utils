@@ -121,4 +121,30 @@ K:HP
     expect(res.xml).toContain('<grace');
     expect(res.xml).toContain('<step>A</step>');
   });
+
+  it('should export chords with duration multipliers like [Adf]2 as half notes', () => {
+    const abc = `
+X:1
+T:Canon in D
+C:Johann Pachelbel
+%%score { 1 | 2 }
+L:1/4
+Q:1/4=100
+M:4/4
+I:linebreak $
+K:D
+V:1 treble nm="Piano" snm="Pno."
+V:2 bass 
+V:1
+!p! z4 | z4 | z4 |!<(! z4!<)! |$ %4
+ f2 e2 | d2 c2 | B2 A2 | B2 c2 |$ %8
+ [Adf]2 [Ace]2 | [FBd]2 [FAc]2 | [DGB]2 [DFA]2 |!<(! [DGB]2 [EAc]2!<)! |$ %12
+`;
+    const res = abc2xml(abc);
+    expect(res.xml).toBeDefined();
+    // In measure 9, [Adf]2 and [Ace]2 should both have type 'half'
+    expect(res.xml).toContain('<type>half</type>');
+    // Ensure all 3 notes in chord have half duration (2 beats = 2 * divisions)
+    expect(res.xml).toContain('<chord/>');
+  });
 });

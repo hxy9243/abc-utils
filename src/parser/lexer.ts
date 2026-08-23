@@ -210,15 +210,24 @@ export class Lexer {
       }
 
       if (char === ']') {
-        // Check if chord end has trailing duration or tie
-        tokens.push({
-          type: TokenType.ChordEnd,
-          value: ']',
-          line: lineNum,
-          column: col + 1,
-        });
-        col++;
-        continue;
+        // Check if chord end has trailing duration e.g. ]2, ]/2, ]3/2
+        const chordEndMatch = line.slice(col).match(/^\](\d+\/\d+|\d+\/+|\/\d+|\/+|\d+)?/);
+        if (chordEndMatch) {
+          const fullChordEndStr = chordEndMatch[0];
+          const durationStr = chordEndMatch[1] ?? '';
+          tokens.push({
+            type: TokenType.ChordEnd,
+            value: fullChordEndStr,
+            line: lineNum,
+            column: col + 1,
+            raw: fullChordEndStr,
+            metadata: {
+              durationStr,
+            },
+          });
+          col += fullChordEndStr.length;
+          continue;
+        }
       }
 
       // 2. Annotations & Guitar Chords: "Am7", "^text", "_text", "<text", ">text", "@x,y text"
