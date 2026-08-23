@@ -9,12 +9,16 @@ describe('abc2xml initial smoke tests', () => {
 
   it('should return basic MusicXML container for valid input', () => {
     const result = abc2xml('X:1\nT:Test\nK:C\nC D E F\n');
-    expect(result.xml).toContain('<score-partwise version="4.0"/>');
+    expect(result.xml).toContain('<score-partwise version="4.0">');
+    expect(result.xml).toContain('<work-title>Test</work-title>');
+    expect(result.xml).toContain('<step>C</step>');
     expect(result.warnings).toEqual([]);
   });
 
   it('should support version option', () => {
     const result = abc2xml('X:1\nK:C\nC\n', { version: '3.1' });
-    expect(result.xml).toContain('<score-partwise version="3.1"/>');
+    expect(result.xml).toContain('<score-partwise version="3.1">');
+    expect(result.xml).toContain('MusicXML 3.1 Partwise');
   });
+
 });

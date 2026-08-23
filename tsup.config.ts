@@ -1,7 +1,13 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: [
+    'src/index.ts',
+    'src/converters/abc2xml/index.ts',
+    'src/parser/index.ts',
+    'src/core/index.ts',
+    'src/operations/index.ts',
+  ],
   format: ['cjs', 'esm'],
   dts: true,
   splitting: false,
@@ -15,4 +21,3 @@ export default defineConfig({
     };
   },
 });
-

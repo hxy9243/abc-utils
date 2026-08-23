@@ -1,7 +1,7 @@
 {
-  "name": "abc2xml-ts",
+  "name": "abc-utils",
   "version": "0.1.0",
-  "description": "A standalone, zero-dependency, pure TypeScript library for converting ABC Music Notation (v2.1) into MusicXML 4.0",
+  "description": "A standalone, zero-dependency, pure TypeScript library for ABC Music Notation (v2.1) parsing, manipulation, transposition, and MusicXML 4.0 conversion.",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,6 +14,46 @@
       "require": {
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
+      }
+    },
+    "./abc2xml": {
+      "import": {
+        "types": "./dist/converters/abc2xml/index.d.ts",
+        "default": "./dist/converters/abc2xml/index.js"
+      },
+      "require": {
+        "types": "./dist/converters/abc2xml/index.d.cts",
+        "default": "./dist/converters/abc2xml/index.cjs"
+      }
+    },
+    "./parser": {
+      "import": {
+        "types": "./dist/parser/index.d.ts",
+        "default": "./dist/parser/index.js"
+      },
+      "require": {
+        "types": "./dist/parser/index.d.cts",
+        "default": "./dist/parser/index.cjs"
+      }
+    },
+    "./core": {
+      "import": {
+        "types": "./dist/core/index.d.ts",
+        "default": "./dist/core/index.js"
+      },
+      "require": {
+        "types": "./dist/core/index.d.cts",
+        "default": "./dist/core/index.cjs"
+      }
+    },
+    "./operations": {
+      "import": {
+        "types": "./dist/operations/index.d.ts",
+        "default": "./dist/operations/index.js"
+      },
+      "require": {
+        "types": "./dist/operations/index.d.cts",
+        "default": "./dist/operations/index.cjs"
       }
     }
   },
@@ -30,12 +70,15 @@
   },
   "keywords": [
     "abc",
+    "abc-notation",
     "musicxml",
-    "music-notation",
     "musicxml4",
     "sheet-music",
+    "music-notation",
     "abc2xml",
-    "abcjs",
+    "xml2abc",
+    "music-theory",
+    "transpose",
     "parser"
   ],
   "author": "Kevin",
