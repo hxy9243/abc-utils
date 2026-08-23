@@ -68,7 +68,11 @@
     "test:coverage": "vitest run --coverage",
     "prepublishOnly": "npm run build && npm run test"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "keywords": [
+
     "abc",
     "abc-notation",
     "musicxml",
