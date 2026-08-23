@@ -1,0 +1,16 @@
+X:3
+T:O Haupt voll Blut und Wunden
+C:J. S. Bach
+M:4/4
+L:1/4
+%%score [ ( 1 2 ) | ( 3 4 ) ]
+V:1 name="Soprano" clef=treble
+V:2 name="Alto" clef=treble
+V:3 name="Tenor" clef=bass
+V:4 name="Bass" clef=bass
+K:F
+[V:1] A | d c B A | G2 F A | B c d c | B2 A :|
+w: O Haupt voll Blut und Wun- den, voll Schmerz und bit- trer Hohn,
+[V:2] F | F F F/E/ D | E2 D F | F F F F | E2 F :|
+[V:3] d | A A d A | c2 A c | d c B A | G2 C :|
+[V:4] D, | D, F, B,, D, | C,2 D, F, | B,, A,, B,, F,, | C,2 F,, :|

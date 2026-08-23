@@ -1,0 +1,12 @@
+X:2
+T:Fur Elise
+C:Ludwig van Beethoven
+M:3/8
+L:1/16
+Q:3/8=50
+%%score 1 | 2
+V:1 clef=treble
+V:2 clef=bass
+K:Am
+[V:1] !pp! e^d | e^deB=dc | !1! A2 z !1! C !2! E !3! A | !1! B2 z !1! E !2! ^G !3! B | !1! c2 z e^d |
+[V:2] z2 | z6 | A,,E,A, z3 | E,,E,^G, z3 | A,,E,A, z3 |
