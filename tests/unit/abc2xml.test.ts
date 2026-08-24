@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { abc2xml } from '../../src/converters/abc2xml/index.js';
 
+const noteBlocks = (xml: string): string[] => (
+  Array.from(xml.matchAll(/<note>([\s\S]*?)<\/note>/g), (match) => match[1] ?? '')
+);
+
 describe('abc2xml Comprehensive Conversion Tests', () => {
   it('should convert monophonic melody with dynamics, articulations, and fingerings', () => {
     const abc = `
@@ -146,5 +150,87 @@ V:1
     expect(res.xml).toContain('<type>half</type>');
     // Ensure all 3 notes in chord have half duration (2 beats = 2 * divisions)
     expect(res.xml).toContain('<chord/>');
+  });
+
+  it('should preserve exact triplet timing and nominal note types', () => {
+    const res = abc2xml(`
+X:1
+M:4/4
+L:1/8
+K:C
+(3CDE F2 G2 A2|]
+`);
+    const divisions = Number(res.xml.match(/<divisions>(\d+)<\/divisions>/)?.[1]);
+    const tripletNotes = noteBlocks(res.xml).slice(0, 3);
+
+    expect(divisions).toBeGreaterThan(0);
+    expect(divisions % 3).toBe(0);
+    expect(tripletNotes).toHaveLength(3);
+    for (const note of tripletNotes) {
+      expect(note).toContain(`<duration>${divisions / 3}</duration>`);
+      expect(note).toContain('<type>eighth</type>');
+      expect(note).toContain('<actual-notes>3</actual-notes>');
+      expect(note).toContain('<normal-notes>2</normal-notes>');
+    }
+  });
+
+  it('should apply tuplets to chords and rests as single rhythmic events', () => {
+    const res = abc2xml(`
+X:1
+M:4/4
+L:1/8
+K:C
+(3[CEG]zD z6|]
+`);
+    const divisions = Number(res.xml.match(/<divisions>(\d+)<\/divisions>/)?.[1]);
+    const notes = noteBlocks(res.xml);
+
+    expect(notes.slice(0, 5)).toHaveLength(5);
+    for (const note of notes.slice(0, 5)) {
+      expect(note).toContain(`<duration>${divisions / 3}</duration>`);
+      expect(note).toContain('<type>eighth</type>');
+      expect(note).toContain('<actual-notes>3</actual-notes>');
+    }
+    expect(notes[3]).toContain('<rest/>');
+  });
+
+  it('should emit playback and notation tie starts and stops', () => {
+    const res = abc2xml(`
+X:1
+M:4/4
+L:1/4
+K:C
+^C-|C [CEG]-[CEG] C2-|C2|]
+`);
+
+    expect(res.xml.match(/<tie type="start"\/>/g)).toHaveLength(5);
+    expect(res.xml.match(/<tie type="stop"\/>/g)).toHaveLength(5);
+    expect(res.xml.match(/<tied type="start"\/>/g)).toHaveLength(5);
+    expect(res.xml.match(/<tied type="stop"\/>/g)).toHaveLength(5);
+
+    const tiedNotes = noteBlocks(res.xml).filter((note) => note.includes('<tie'));
+    expect(tiedNotes[1]).toContain('<alter>1</alter>');
+  });
+
+  it('should keep accidental state independent across grand-staff staves', () => {
+    const res = abc2xml(`
+X:1
+M:4/4
+L:1/4
+%%score { 1 | 2 }
+V:1 clef=treble
+V:2 clef=bass
+K:C
+[V:1] ^C C |
+[V:2] C C |
+`);
+    const pitchedNotes = noteBlocks(res.xml).filter((note) => note.includes('<pitch>'));
+    const upperStaff = pitchedNotes.filter((note) => note.includes('<staff>1</staff>'));
+    const lowerStaff = pitchedNotes.filter((note) => note.includes('<staff>2</staff>'));
+
+    expect(upperStaff).toHaveLength(2);
+    expect(upperStaff.every((note) => note.includes('<alter>1</alter>'))).toBe(true);
+    expect(lowerStaff).toHaveLength(2);
+    expect(lowerStaff.every((note) => !note.includes('<alter>'))).toBe(true);
   });
 });
