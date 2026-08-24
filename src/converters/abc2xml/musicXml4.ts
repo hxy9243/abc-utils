@@ -98,9 +98,24 @@ function calculateScoreDivisions(ast: AbcTuneAST, unitLength: Rational): number 
 
   for (const voice of ast.voices) {
     for (const measure of voice.measures) {
+      let activeTuplet: { p: number; q: number; r: number; count: number } | null = null;
+
       for (const el of measure.elements) {
+        if (el.kind === 'tuplet-start') {
+          activeTuplet = { p: el.p, q: el.q, r: el.r, count: 0 };
+          continue;
+        }
+
         if (el.kind === 'note' || el.kind === 'chord' || el.kind === 'rest') {
-          const elDur = new Rational(el.duration.numerator, el.duration.denominator);
+          let elDur = new Rational(el.duration.numerator, el.duration.denominator);
+          if (el.kind !== 'rest' && el.brokenRhythm) {
+            elDur = applyBrokenRhythm(elDur, el.brokenRhythm);
+          }
+          if (activeTuplet) {
+            elDur = elDur.mul(new Rational(activeTuplet.q, activeTuplet.p));
+            activeTuplet.count++;
+            if (activeTuplet.count === activeTuplet.r) activeTuplet = null;
+          }
           const wholeDur = elDur.mul(unitLength);
           // Quarter note duration = wholeDur * 4
           const quarterDur = wholeDur.mul(4);
@@ -110,8 +125,48 @@ function calculateScoreDivisions(ast: AbcTuneAST, unitLength: Rational): number 
     }
   }
 
-  // Ensure minimum divisions of 4 or 8 for standard precision
-  return Math.max(lcm, 4);
+  // Preserve exact rational durations while keeping standard quarter-note precision.
+  return Rational.lcm(lcm, 4);
+}
+
+function applyBrokenRhythm(
+  ratio: Rational,
+  brokenRhythm: { direction: '>' | '<'; count: number }
+): Rational {
+  if (brokenRhythm.direction === '>') {
+    const multiplier = brokenRhythm.count === 1
+      ? new Rational(3, 2)
+      : brokenRhythm.count === 2
+        ? new Rational(7, 4)
+        : new Rational(15, 8);
+    return ratio.mul(multiplier);
+  }
+
+  const multiplier = brokenRhythm.count === 1
+    ? new Rational(1, 2)
+    : brokenRhythm.count === 2
+      ? new Rational(1, 4)
+      : new Rational(1, 8);
+  return ratio.mul(multiplier);
+}
+
+type TupletState = { p: number; q: number; r: number; count: number };
+type TupletInfo = {
+  ratio?: { p: number; q: number };
+  start: boolean;
+  stop: boolean;
+};
+
+function advanceTuplet(activeTuplet: TupletState | null): TupletInfo {
+  if (!activeTuplet) return { start: false, stop: false };
+
+  const start = activeTuplet.count === 0;
+  activeTuplet.count++;
+  return {
+    ratio: { p: activeTuplet.p, q: activeTuplet.q },
+    start,
+    stop: activeTuplet.count === activeTuplet.r,
+  };
 }
 
 function serializePart(
@@ -132,6 +187,7 @@ function serializePart(
   let currentKeyInfo = ctx.defaultKeyInfo;
   let currentMeterInfo = ctx.defaultMeterInfo;
   let currentUnitLength = ctx.defaultUnitLength;
+  const pendingTiesByVoice = new Map<string, Map<string, number>>();
 
   for (let mIdx = 0; mIdx < maxMeasures; mIdx++) {
     const measureNumber = mIdx + 1;
@@ -220,8 +276,10 @@ function serializePart(
       let voiceDuration = 0;
 
       // Track active tuplet
-      let activeTuplet: { p: number; q: number; r: number; count: number } | null = null;
+      let activeTuplet: TupletState | null = null;
       let lyricIdx = 0;
+      const pendingTies = pendingTiesByVoice.get(voice.id) ?? new Map<string, number>();
+      pendingTiesByVoice.set(voice.id, pendingTies);
 
       for (let eIdx = 0; eIdx < measureAst.elements.length; eIdx++) {
         const el = measureAst.elements[eIdx]!;
@@ -266,9 +324,7 @@ function serializePart(
 
         // Handle Note / Chord / Rest
         if (el.kind === 'note') {
-          const tupletStart = activeTuplet !== null && activeTuplet.count === 0;
-          if (activeTuplet) activeTuplet.count++;
-          const tupletStop = activeTuplet !== null && activeTuplet.count === activeTuplet.r;
+          const tuplet = advanceTuplet(activeTuplet);
 
           const syl = measureAst.lyrics[0]?.syllables[lyricIdx];
           if (syl) lyricIdx++;
@@ -282,10 +338,11 @@ function serializePart(
             currentKeyInfo,
             currentUnitLength,
             accidentalMemory,
+            pendingTies,
             {
-              tuplet: activeTuplet ? { p: activeTuplet.p, q: activeTuplet.q } : undefined,
-              tupletStart,
-              tupletStop,
+              tuplet: tuplet.ratio,
+              tupletStart: tuplet.start,
+              tupletStop: tuplet.stop,
               syllable: syl,
             }
           );
@@ -294,8 +351,9 @@ function serializePart(
             voiceDuration += durTicks;
           }
 
-          if (tupletStop) activeTuplet = null;
+          if (tuplet.stop) activeTuplet = null;
         } else if (el.kind === 'chord') {
+          const tuplet = advanceTuplet(activeTuplet);
           const syl = measureAst.lyrics[0]?.syllables[lyricIdx];
           if (syl) lyricIdx++;
 
@@ -308,12 +366,34 @@ function serializePart(
             currentKeyInfo,
             currentUnitLength,
             accidentalMemory,
-            { syllable: syl }
+            pendingTies,
+            {
+              tuplet: tuplet.ratio,
+              tupletStart: tuplet.start,
+              tupletStop: tuplet.stop,
+              syllable: syl,
+            }
           );
           voiceDuration += durTicks;
+          if (tuplet.stop) activeTuplet = null;
         } else if (el.kind === 'rest') {
-          const durTicks = serializeRest(el, measureNode, route, part, ctx, currentUnitLength);
+          const tuplet = advanceTuplet(activeTuplet);
+          pendingTies.clear();
+          const durTicks = serializeRest(
+            el,
+            measureNode,
+            route,
+            part,
+            ctx,
+            currentUnitLength,
+            {
+              tuplet: tuplet.ratio,
+              tupletStart: tuplet.start,
+              tupletStop: tuplet.stop,
+            }
+          );
           voiceDuration += durTicks;
+          if (tuplet.stop) activeTuplet = null;
         }
       }
 
@@ -336,6 +416,7 @@ function serializeNote(
   keyInfo: KeySignatureInfo,
   unitLength: Rational,
   accidentalMemory: Map<string, number>,
+  pendingTies: Map<string, number>,
   extra: {
     tuplet?: { p: number; q: number };
     tupletStart?: boolean;
@@ -382,7 +463,8 @@ function serializeNote(
   // Pitch calculation & Accidental state
   const step = note.pitch.step;
   const octave = note.pitch.octave;
-  const accKey = `${step}${octave}`;
+  const accKey = `${route.staffNumber}:${step}${octave}`;
+  const tiePitchKey = `${step}${octave}`;
 
   let alter = 0;
   let isExplicitAccidental = false;
@@ -391,6 +473,8 @@ function serializeNote(
     alter = accidentalToAlter(note.pitch.accidental);
     accidentalMemory.set(accKey, alter);
     isExplicitAccidental = true;
+  } else if (pendingTies.has(tiePitchKey)) {
+    alter = pendingTies.get(tiePitchKey)!;
   } else if (accidentalMemory.has(accKey)) {
     alter = accidentalMemory.get(accKey)!;
   } else {
@@ -406,19 +490,14 @@ function serializeNote(
 
   // Duration & Type calculation
   const noteDurationRatio = new Rational(note.duration.numerator, note.duration.denominator);
-  let effectiveRatio = noteDurationRatio;
+  let displayRatio = noteDurationRatio;
 
   // Broken rhythm adjustment
   if (note.brokenRhythm) {
-    if (note.brokenRhythm.direction === '>') {
-      const mult = note.brokenRhythm.count === 1 ? new Rational(3, 2) : note.brokenRhythm.count === 2 ? new Rational(7, 4) : new Rational(15, 8);
-      effectiveRatio = effectiveRatio.mul(mult);
-    } else {
-      const mult = note.brokenRhythm.count === 1 ? new Rational(1, 2) : note.brokenRhythm.count === 2 ? new Rational(1, 4) : new Rational(1, 8);
-      effectiveRatio = effectiveRatio.mul(mult);
-    }
+    displayRatio = applyBrokenRhythm(displayRatio, note.brokenRhythm);
   }
 
+  let effectiveRatio = displayRatio;
   // Tuplet time modification
   if (extra.tuplet) {
     effectiveRatio = effectiveRatio.mul(new Rational(extra.tuplet.q, extra.tuplet.p));
@@ -432,11 +511,18 @@ function serializeNote(
     noteNode.ele('duration', {}, durationTicks);
   }
 
+  const tieStop = pendingTies.get(tiePitchKey) === alter;
+  pendingTies.clear();
+  if (note.tie) pendingTies.set(tiePitchKey, alter);
+
+  if (tieStop) noteNode.ele('tie', { type: 'stop' });
+  if (note.tie) noteNode.ele('tie', { type: 'start' });
+
   // Voice
   noteNode.ele('voice', {}, route.voiceNumber);
 
   // Graphical Note Type & Dots
-  const typeInfo = noteTypeFromDuration(effectiveRatio.mul(unitLength));
+  const typeInfo = noteTypeFromDuration(displayRatio.mul(unitLength));
   noteNode.ele('type', {}, typeInfo.type);
   for (let d = 0; d < typeInfo.dots; d++) {
     noteNode.ele('dot');
@@ -462,6 +548,7 @@ function serializeNote(
   // Notations (slurs, ties, ornaments, articulations, fingerings)
   applyNotations(noteNode, note.decorations, {
     tieStart: note.tie,
+    tieStop,
     slurStarts: note.slurStarts,
     slurEnds: note.slurEnds,
     tupletStart: extra.tupletStart,
@@ -485,7 +572,13 @@ function serializeChord(
   keyInfo: KeySignatureInfo,
   unitLength: Rational,
   accidentalMemory: Map<string, number>,
-  extra: { syllable?: AbcLyricSyllable }
+  pendingTies: Map<string, number>,
+  extra: {
+    tuplet?: { p: number; q: number };
+    tupletStart?: boolean;
+    tupletStop?: boolean;
+    syllable?: AbcLyricSyllable;
+  }
 ): number {
   // Check for guitar chords and text annotations attached to chord
   if (chord.annotations) {
@@ -502,6 +595,8 @@ function serializeChord(
   }
 
   let chordDurationTicks = 0;
+  const previousTies = new Map(pendingTies);
+  pendingTies.clear();
 
 
   for (let i = 0; i < chord.notes.length; i++) {
@@ -514,7 +609,8 @@ function serializeChord(
 
     const step = note.pitch.step;
     const octave = note.pitch.octave;
-    const accKey = `${step}${octave}`;
+    const accKey = `${route.staffNumber}:${step}${octave}`;
+    const tiePitchKey = `${step}${octave}`;
 
     let alter = 0;
     let isExplicitAccidental = false;
@@ -523,6 +619,8 @@ function serializeChord(
       alter = accidentalToAlter(note.pitch.accidental);
       accidentalMemory.set(accKey, alter);
       isExplicitAccidental = true;
+    } else if (previousTies.has(tiePitchKey)) {
+      alter = previousTies.get(tiePitchKey)!;
     } else if (accidentalMemory.has(accKey)) {
       alter = accidentalMemory.get(accKey)!;
     } else {
@@ -537,17 +635,16 @@ function serializeChord(
     pitchNode.ele('octave', {}, octave);
 
     const noteDurationRatio = new Rational(note.duration.numerator, note.duration.denominator);
-    let effectiveRatio = noteDurationRatio;
+    let displayRatio = noteDurationRatio;
 
     // Broken rhythm adjustment
     if (chord.brokenRhythm) {
-      if (chord.brokenRhythm.direction === '>') {
-        const mult = chord.brokenRhythm.count === 1 ? new Rational(3, 2) : chord.brokenRhythm.count === 2 ? new Rational(7, 4) : new Rational(15, 8);
-        effectiveRatio = effectiveRatio.mul(mult);
-      } else {
-        const mult = chord.brokenRhythm.count === 1 ? new Rational(1, 2) : chord.brokenRhythm.count === 2 ? new Rational(1, 4) : new Rational(1, 8);
-        effectiveRatio = effectiveRatio.mul(mult);
-      }
+      displayRatio = applyBrokenRhythm(displayRatio, chord.brokenRhythm);
+    }
+
+    let effectiveRatio = displayRatio;
+    if (extra.tuplet) {
+      effectiveRatio = effectiveRatio.mul(new Rational(extra.tuplet.q, extra.tuplet.p));
     }
 
     const wholeDuration = effectiveRatio.mul(unitLength);
@@ -558,9 +655,16 @@ function serializeChord(
     }
 
     noteNode.ele('duration', {}, durationTicks);
+
+    const tieStart = chord.tie || note.tie === true;
+    const tieStop = previousTies.get(tiePitchKey) === alter;
+    if (tieStart) pendingTies.set(tiePitchKey, alter);
+    if (tieStop) noteNode.ele('tie', { type: 'stop' });
+    if (tieStart) noteNode.ele('tie', { type: 'start' });
+
     noteNode.ele('voice', {}, route.voiceNumber);
 
-    const typeInfo = noteTypeFromDuration(wholeDuration);
+    const typeInfo = noteTypeFromDuration(displayRatio.mul(unitLength));
     noteNode.ele('type', {}, typeInfo.type);
     for (let d = 0; d < typeInfo.dots; d++) {
       noteNode.ele('dot');
@@ -570,12 +674,21 @@ function serializeChord(
       noteNode.ele('accidental', {}, alterToMusicXmlAccidental(alter));
     }
 
+    if (extra.tuplet) {
+      const timeMod = noteNode.ele('time-modification');
+      timeMod.ele('actual-notes', {}, extra.tuplet.p);
+      timeMod.ele('normal-notes', {}, extra.tuplet.q);
+    }
+
     if (part.stavesCount > 1) {
       noteNode.ele('staff', {}, route.staffNumber);
     }
 
     applyNotations(noteNode, i === 0 ? chord.decorations : undefined, {
-      tieStart: chord.tie || note.tie,
+      tieStart,
+      tieStop,
+      tupletStart: i === 0 ? extra.tupletStart : false,
+      tupletStop: i === 0 ? extra.tupletStop : false,
     });
 
     if (i === 0 && extra.syllable) {
@@ -592,25 +705,44 @@ function serializeRest(
   route: VoiceRoute,
   part: WeavedPart,
   ctx: SerializationContext,
-  unitLength: Rational
+  unitLength: Rational,
+  extra: {
+    tuplet?: { p: number; q: number };
+    tupletStart?: boolean;
+    tupletStop?: boolean;
+  }
 ): number {
   const noteNode = measureNode.ele('note');
   noteNode.ele('rest');
 
   const restDurationRatio = new Rational(rest.duration.numerator, rest.duration.denominator);
-  const wholeDuration = restDurationRatio.mul(unitLength);
+  const effectiveRatio = extra.tuplet
+    ? restDurationRatio.mul(new Rational(extra.tuplet.q, extra.tuplet.p))
+    : restDurationRatio;
+  const wholeDuration = effectiveRatio.mul(unitLength);
   const quarterDuration = wholeDuration.mul(4);
   const durationTicks = Math.round(quarterDuration.toNumber() * ctx.divisions);
 
   noteNode.ele('duration', {}, durationTicks);
   noteNode.ele('voice', {}, route.voiceNumber);
 
-  const typeInfo = noteTypeFromDuration(wholeDuration);
+  const typeInfo = noteTypeFromDuration(restDurationRatio.mul(unitLength));
   noteNode.ele('type', {}, typeInfo.type);
+
+  if (extra.tuplet) {
+    const timeMod = noteNode.ele('time-modification');
+    timeMod.ele('actual-notes', {}, extra.tuplet.p);
+    timeMod.ele('normal-notes', {}, extra.tuplet.q);
+  }
 
   if (part.stavesCount > 1) {
     noteNode.ele('staff', {}, route.staffNumber);
   }
+
+  applyNotations(noteNode, [], {
+    tupletStart: extra.tupletStart,
+    tupletStop: extra.tupletStop,
+  });
 
   return durationTicks;
 }
