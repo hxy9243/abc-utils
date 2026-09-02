@@ -17,6 +17,7 @@ const DYNAMICS_SET = new Set(['p', 'pp', 'ppp', 'f', 'ff', 'fff', 'mp', 'mf', 's
  * Checks if a decoration string represents dynamic marking (e.g. "p", "f", "mf")
  */
 export function isDynamicDecoration(dec: string): boolean {
+  if (dec === 'P') return false; // In ABC, uppercase 'P' is pralltriller, not piano
   return DYNAMICS_SET.has(dec.toLowerCase());
 }
 
@@ -43,45 +44,40 @@ export function applyNotations(
     tupletStop?: boolean;
   } = {}
 ): void {
-  const hasNotations =
-    decorations.length > 0 ||
-    options.tieStart ||
-    options.tieStop ||
-    options.slurStarts ||
-    options.slurEnds ||
-    options.tupletStart ||
-    options.tupletStop;
-
-  if (!hasNotations) return;
-
-  const notations = noteNode.ele('notations');
+  let notationsNode: XmlNode | null = null;
+  const getNotations = (): XmlNode => {
+    if (!notationsNode) {
+      notationsNode = noteNode.ele('notations');
+    }
+    return notationsNode;
+  };
 
   // 1. Ties
   if (options.tieStop) {
-    notations.ele('tied', { type: 'stop' });
+    getNotations().ele('tied', { type: 'stop' });
   }
   if (options.tieStart) {
-    notations.ele('tied', { type: 'start' });
+    getNotations().ele('tied', { type: 'start' });
   }
 
   // 2. Slurs
   if (options.slurStarts) {
     for (let i = 0; i < options.slurStarts; i++) {
-      notations.ele('slur', { type: 'start', number: i + 1 });
+      getNotations().ele('slur', { type: 'start', number: i + 1 });
     }
   }
   if (options.slurEnds) {
     for (let i = 0; i < options.slurEnds; i++) {
-      notations.ele('slur', { type: 'stop', number: i + 1 });
+      getNotations().ele('slur', { type: 'stop', number: i + 1 });
     }
   }
 
   // 3. Tuplet spanner
   if (options.tupletStart) {
-    notations.ele('tuplet', { type: 'start' });
+    getNotations().ele('tuplet', { type: 'start' });
   }
   if (options.tupletStop) {
-    notations.ele('tuplet', { type: 'stop' });
+    getNotations().ele('tuplet', { type: 'stop' });
   }
 
   // 4. Articulations, Ornaments, Technical
@@ -90,76 +86,79 @@ export function applyNotations(
   let technicalNode: XmlNode | null = null;
 
   for (const dec of decorations) {
+    // Skip dynamic decorations (e.g. p, pp, f, etc.) as they are handled in <direction>
+    if (isDynamicDecoration(dec)) continue;
+
     const d = dec.toLowerCase();
 
     // Fingerings: !1! to !5!
     if (/^[1-5]$/.test(d)) {
-      if (!technicalNode) technicalNode = notations.ele('technical');
+      if (!technicalNode) technicalNode = getNotations().ele('technical');
       technicalNode.ele('fingering', {}, d);
       continue;
     }
 
-    // Bowing
-    if (d === 'upbow' || d === 'u') {
-      if (!technicalNode) technicalNode = notations.ele('technical');
+    // Bowing: u (up-bow), v (down-bow)
+    if (d === 'upbow' || dec === 'u') {
+      if (!technicalNode) technicalNode = getNotations().ele('technical');
       technicalNode.ele('up-bow');
       continue;
     }
-    if (d === 'downbow' || d === 'v') {
-      if (!technicalNode) technicalNode = notations.ele('technical');
+    if (d === 'downbow' || dec === 'v') {
+      if (!technicalNode) technicalNode = getNotations().ele('technical');
       technicalNode.ele('down-bow');
       continue;
     }
 
-    // Articulations
-    if (d === 'staccato' || d === '.') {
-      if (!articulationsNode) articulationsNode = notations.ele('articulations');
+    // Articulations: . (staccato), > or L (accent), tenuto, H (fermata)
+    if (d === 'staccato' || dec === '.') {
+      if (!articulationsNode) articulationsNode = getNotations().ele('articulations');
       articulationsNode.ele('staccato');
       continue;
     }
-    if (d === 'accent' || d === 'l' || d === '>') {
-      if (!articulationsNode) articulationsNode = notations.ele('articulations');
+    if (d === 'accent' || dec === 'L' || dec === '>') {
+      if (!articulationsNode) articulationsNode = getNotations().ele('articulations');
       articulationsNode.ele('accent');
       continue;
     }
     if (d === 'tenuto') {
-      if (!articulationsNode) articulationsNode = notations.ele('articulations');
+      if (!articulationsNode) articulationsNode = getNotations().ele('articulations');
       articulationsNode.ele('tenuto');
       continue;
     }
-    if (d === 'fermata' || d === 'h') {
-      notations.ele('fermata', { type: 'upright' });
+    if (d === 'fermata' || dec === 'H') {
+      getNotations().ele('fermata', { type: 'upright' });
       continue;
     }
     if (d === 'breath' || d === 'breathmark') {
-      if (!articulationsNode) articulationsNode = notations.ele('articulations');
+      if (!articulationsNode) articulationsNode = getNotations().ele('articulations');
       articulationsNode.ele('breath-mark');
       continue;
     }
 
-    // Ornaments
-    if (d === 'trill' || d === 't' || d === '~') {
-      if (!ornamentsNode) ornamentsNode = notations.ele('ornaments');
+    // Ornaments: T or ~ (trill), turn, M (mordent), P (pralltriller)
+    if (d === 'trill' || dec === 'T' || dec === '~') {
+      if (!ornamentsNode) ornamentsNode = getNotations().ele('ornaments');
       ornamentsNode.ele('trill-mark');
       continue;
     }
     if (d === 'turn') {
-      if (!ornamentsNode) ornamentsNode = notations.ele('ornaments');
+      if (!ornamentsNode) ornamentsNode = getNotations().ele('ornaments');
       ornamentsNode.ele('turn');
       continue;
     }
-    if (d === 'mordent' || d === 'm') {
-      if (!ornamentsNode) ornamentsNode = notations.ele('ornaments');
+    if (d === 'mordent' || dec === 'M') {
+      if (!ornamentsNode) ornamentsNode = getNotations().ele('ornaments');
       ornamentsNode.ele('mordent');
       continue;
     }
-    if (d === 'pralltriller' || d === 'p') {
-      if (!ornamentsNode) ornamentsNode = notations.ele('ornaments');
+    if (d === 'pralltriller' || dec === 'P') {
+      if (!ornamentsNode) ornamentsNode = getNotations().ele('ornaments');
       ornamentsNode.ele('inverted-mordent');
       continue;
     }
     if (d === 'arpeggio') {
-      notations.ele('arpeggiate');
+      getNotations().ele('arpeggiate');
       continue;
     }
   }

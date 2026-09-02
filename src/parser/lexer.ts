@@ -416,12 +416,12 @@ export class Lexer {
           continue;
         }
         // Match specific 1-char decorations
-        if (/^[.~HLMOPSuv]/.test(char)) {
+        if (/^[.~HLMOPSTuv]/.test(char)) {
           // If 'T' or 'H' or 'L' or 'M' or 'O' or 'P' or 'S' or 'u' or 'v' is followed immediately by pitch or rest
           // Note: 'T' could be a title in header, but here we are inside music lines.
           // In music lines, ~ and . are definitely decorations.
           // For uppercase H, L, M, O, P, S, T, u, v:
-          if (char === '.' || char === '~' || char === 'u' || char === 'v' || /^[HLMOPS]/.test(char)) {
+          if (char === '.' || char === '~' || char === 'u' || char === 'v' || /^[HLMOPST]/.test(char)) {
             tokens.push({
               type: TokenType.Decoration,
               value: char,

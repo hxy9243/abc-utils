@@ -269,4 +269,35 @@ V:lower clef=bass
       expect(partXml).toContain('<note>');
     }
   });
+
+  it('should not confuse dynamic markings like !p! or !pp! with ornaments/trills', () => {
+    const abc = `
+X:1
+T:Dynamic Test
+K:C
+!p! D !pp! E !f! F |]
+`;
+    const res = abc2xml(abc);
+    expect(res.xml).toBeDefined();
+    expect(res.xml).toContain('<dynamics>');
+    expect(res.xml).toContain('<p/>');
+    expect(res.xml).toContain('<pp/>');
+    expect(res.xml).toContain('<f/>');
+    expect(res.xml).not.toContain('<ornaments>');
+    expect(res.xml).not.toContain('<inverted-mordent');
+    expect(res.xml).not.toContain('<trill-mark');
+    expect(res.xml).not.toContain('<notations/>');
+  });
+
+  it('should still correctly support real ornaments like P (pralltriller) and T (trill)', () => {
+    const abc = `
+X:1
+T:Ornament Test
+K:C
+P D T E |]
+`;
+    const res = abc2xml(abc);
+    expect(res.xml).toContain('<inverted-mordent/>');
+    expect(res.xml).toContain('<trill-mark/>');
+  });
 });
