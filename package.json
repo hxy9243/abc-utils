@@ -1,6 +1,7 @@
 {
   "name": "abc-utils",
   "version": "0.1.0",
+  "type": "module",
   "description": "A standalone, zero-dependency, pure TypeScript library for ABC Music Notation (v2.1) parsing, manipulation, transposition, and MusicXML 4.0 conversion.",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

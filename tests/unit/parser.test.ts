@@ -322,4 +322,47 @@ K:D
       brokenRhythm: { direction: '>', count: 1 },
     });
   });
+
+  it('should not generate phantom default voice 1 when named voices are declared', () => {
+    // Voices declared before K:
+    const abcBeforeK = `
+X:1
+T:Two Voices Header
+V:upper clef=treble
+V:lower clef=bass
+K:C
+[V:upper] C D E F |
+[V:lower] C, D, E, F, |
+`;
+    const ast1 = new GrammarParser(new Lexer(abcBeforeK).tokenize()).parseTune();
+    expect(ast1.voices.map((v) => v.id)).toEqual(['upper', 'lower']);
+    expect(ast1.voices[0]?.header.clef).toBe('treble');
+    expect(ast1.voices[1]?.header.clef).toBe('bass');
+
+    // Voices declared after K:
+    const abcAfterK = `
+X:2
+T:Two Voices Body
+K:Db
+V:upper clef=treble
+V:lower clef=bass
+[V:upper] D2 F2 |
+[V:lower] D,,4 |
+`;
+    const ast2 = new GrammarParser(new Lexer(abcAfterK).tokenize()).parseTune();
+    expect(ast2.voices.map((v) => v.id)).toEqual(['upper', 'lower']);
+    expect(ast2.voices[0]?.header.clef).toBe('treble');
+    expect(ast2.voices[1]?.header.clef).toBe('bass');
+
+    // Single voice without V: declaration defaults cleanly to voice '1'
+    const abcSingle = `
+X:3
+T:Single Voice
+K:G
+G A B c |
+`;
+    const ast3 = new GrammarParser(new Lexer(abcSingle).tokenize()).parseTune();
+    expect(ast3.voices.map((v) => v.id)).toEqual(['1']);
+    expect(ast3.voices[0]?.measures.length).toBe(1);
+  });
 });

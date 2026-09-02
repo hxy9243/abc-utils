@@ -38,10 +38,20 @@ export class GrammarParser {
    * Main entry point to parse a full ABC tune AST.
    */
   public parseTune(): AbcTuneAST {
-    const headers = this.parseHeaders();
+    const { headers, headerVoices } = this.parseHeaders();
     const voicesMap = new Map<string, AbcVoiceAST>();
+    const declaredVoiceIds = new Set<string>();
 
-    let currentVoiceId = '1';
+    for (const vHeader of headerVoices) {
+      declaredVoiceIds.add(vHeader.id);
+      voicesMap.set(vHeader.id, {
+        id: vHeader.id,
+        header: vHeader,
+        measures: [],
+      });
+    }
+
+    let currentVoiceId = headerVoices[0]?.id ?? '1';
     // Initialize default voice if needed
     const ensureVoice = (id: string, customHeader?: Partial<AbcVoiceHeader>): AbcVoiceAST => {
       let voice = voicesMap.get(id);
@@ -67,8 +77,6 @@ export class GrammarParser {
       }
       return voice;
     };
-
-    ensureVoice(currentVoiceId);
 
     // Current pending measure for each voice
     const activeMeasures = new Map<string, AbcMeasureAST>();
@@ -132,6 +140,7 @@ export class GrammarParser {
         if (key === 'V') {
           const vHeader = this.parseVoiceHeader(val);
           currentVoiceId = vHeader.id;
+          declaredVoiceIds.add(vHeader.id);
           ensureVoice(currentVoiceId, vHeader);
         } else if (key === 'K') {
           // Key change inside body
@@ -185,6 +194,7 @@ export class GrammarParser {
         if (key === 'V') {
           const vHeader = this.parseVoiceHeader(val);
           currentVoiceId = vHeader.id;
+          declaredVoiceIds.add(vHeader.id);
           ensureVoice(currentVoiceId, vHeader);
         } else {
           const measure = getActiveMeasure(currentVoiceId);
@@ -379,6 +389,21 @@ export class GrammarParser {
       flushMeasure(voiceId);
     }
 
+    // Clean up empty undeclared fallback voice if other voices exist
+    if (voicesMap.size > 1) {
+      for (const [id, voice] of voicesMap) {
+        const hasElements = voice.measures.some((m) => m.elements.length > 0);
+        if (!hasElements && !declaredVoiceIds.has(id)) {
+          voicesMap.delete(id);
+        }
+      }
+    }
+
+    // If no voices exist at all, ensure at least one default voice
+    if (voicesMap.size === 0) {
+      ensureVoice('1');
+    }
+
     return {
       headers,
       voices: Array.from(voicesMap.values()),
@@ -388,12 +413,13 @@ export class GrammarParser {
   /**
    * Parses header fields until the first K: (key) field
    */
-  private parseHeaders(): AbcHeaders {
+  private parseHeaders(): { headers: AbcHeaders; headerVoices: AbcVoiceHeader[] } {
     const headers: AbcHeaders = {
       titles: [],
       composers: [],
       directives: [],
     };
+    const headerVoices: AbcVoiceHeader[] = [];
 
     while (this.peek().type !== TokenType.EOF) {
       const token = this.peek();
@@ -432,10 +458,15 @@ export class GrammarParser {
           case 'Q':
             headers.tempo = val;
             break;
+          case 'V': {
+            const vHeader = this.parseVoiceHeader(val);
+            headerVoices.push(vHeader);
+            break;
+          }
           case 'K':
             headers.key = val;
             // K: terminates file header in ABC standard
-            return headers;
+            return { headers, headerVoices };
           case 'P':
             headers.parts = val;
             break;
@@ -473,7 +504,7 @@ export class GrammarParser {
       break;
     }
 
-    return headers;
+    return { headers, headerVoices };
   }
 
   /**

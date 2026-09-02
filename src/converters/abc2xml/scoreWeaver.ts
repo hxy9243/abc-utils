@@ -81,15 +81,23 @@ export function weaveScore(ast: AbcTuneAST): WeavedScore {
   const voiceToPartMap = new Map<string, WeavedPart>();
   const voiceRouteMap = new Map<string, VoiceRoute>();
 
+  // Filter out completely empty voices if there are other populated voices
+  const hasPopulatedVoices = ast.voices.some((v) =>
+    v.measures.some((m) => m.elements.length > 0)
+  );
+  const activeVoices = hasPopulatedVoices
+    ? ast.voices.filter((v) => v.measures.some((m) => m.elements.length > 0))
+    : ast.voices;
+
   const scoreLayout = ast.headers.scoreLayout;
 
   if (scoreLayout && scoreLayout.trim().length > 0) {
     // Parse nested %%score expression
-    parseScoreExpression(scoreLayout, ast.voices, parts, voiceToPartMap, voiceRouteMap);
+    parseScoreExpression(scoreLayout, activeVoices, parts, voiceToPartMap, voiceRouteMap);
   } else {
     // Default 1 part per voice or single part if only 1 voice
-    if (ast.voices.length <= 1) {
-      const v = ast.voices[0];
+    if (activeVoices.length <= 1) {
+      const v = activeVoices[0];
       const vId = v?.id ?? '1';
       const partName = v?.header.name || ast.headers.titles[0] || 'Music';
       const partSubname = v?.header.subname || '';
@@ -120,9 +128,9 @@ export function weaveScore(ast: AbcTuneAST): WeavedScore {
     } else {
       // Multiple voices without %%score: allocate separate parts
       let partIdx = 1;
-      for (const v of ast.voices) {
+      for (const v of activeVoices) {
         const pId = `P${partIdx}`;
-        const partName = v.header.name || `Voice ${v.id}`;
+        const partName = v.header.name || (v.id.match(/^\d+$/) ? `Voice ${v.id}` : v.id);
         const partSubname = v.header.subname || '';
         const clef = v.header.clef || (v.header.name?.toLowerCase().includes('bass') ? 'bass' : 'treble');
 
