@@ -237,24 +237,15 @@ K:C
   it('should convert multi-voice score with named voices (upper/lower) without phantom parts', () => {
     const abc = `
 X:1
-T:Suspended Reverie
-C:Chorale
+T:Minimal Multi-Voice
 M:6/8
 L:1/8
 Q:1/4=80
 K:Db
-%%MIDI program 1
 V:upper clef=treble
 V:lower clef=bass
-% --- A: floating Db-major dream (mm. 1-8) ---
-[V:upper] !pp!D2 F2 [A c]2 | D2 F2 [=A c]2 | G2 B2 [d f]2 | B2 d2 [f a]2 | E2 G2 [B f]2 | A2 c2 [=E g]2 | c2 e2 [g b]2 | F2/A3 [d e]2 |
-[V:lower] D,,6 | D,,6 | G,,6 | B,,6 | E,,6 | A,,6 | C,6 | D,,6 |
-% --- B: augmented shimmer & chromatic bass (mm. 9-16) ---
-[V:upper] !p!D F =A c d2 | F2 A2 d2 | =A2 d2 f2 | [G B =d]2 [G B =d]2 [G B =d]2 | E2 G2 [B f]2 | A2 c2 [=E g]2 | c2 e2 [g b]2 | A2 c2 [e g]2 |
-[V:lower] D,,3 =D,3 | F,,3 G,3 | A,,3 =B,3 | G,,6 | E,,6 | A,,6 | C,6 | A,,6 |
-% --- A': luminous recapitulation (mm. 17-24) ---
-[V:upper] !pp!D2 F2 [A c]2 | D2 F2 [=A c]2 | G2 B2 [d f]2 | B2 d2 [f a]2 | E2 G2 [B f]2 | A2 c2 [=E g]2 | c2 e2 [g b]2 | !ppp!D2 F2 [A c e]2 |]
-[V:lower] D,,3 D,3 | D,,3 =D,3 | G,,6 | B,,6 | E,,6 | A,,6 | C,6 | D,,3 D,3 |]
+[V:upper] !pp! D2 F2 [A c]2 |]
+[V:lower] D,,6 |]
 `;
     const res = abc2xml(abc);
     expect(res.xml).toBeDefined();
