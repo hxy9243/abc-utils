@@ -74,3 +74,36 @@ Hyphenated words split across multiple notes in ABC (e.g. `Glo- ri- a` or `Glo-r
 - `_`: Melisma extension (holds preceding syllable over note).
 - `*`: Skip note without lyric.
 - `~`: Tie two syllables under a single note.
+
+---
+
+## 5. Pickup Measures (Anacrusis) & Split Repeat Measures
+
+### The Problem
+Standard ABC tunes frequently open with an incomplete measure (anacrusis / pickup), contain mid-measure repeat barlines where two measure fragments together form a single metric measure, or conclude with a complementary partial measure. Naive converters that strictly increment measure numbers from 1 or pad all measures to nominal meter duration generate invalid MusicXML measures, misnumbered bars, or incorrect rests.
+
+### MusicXML 4.0 Standard Requirements
+1. **Pickup Measure (Measure 0)**:
+   - Must be emitted as `<measure number="0" implicit="yes">`.
+   - The subsequent first complete measure begins as `<measure number="1">`.
+2. **Mid-Measure Repeat Barlines (Split Measures)**:
+   - When a repeat barline occurs mid-measure, both partial fragments belong to the same written measure number.
+   - Both fragments are emitted with `implicit="yes"` and identical measure numbers (e.g. `<measure number="7" implicit="yes">` ... `<measure number="7" implicit="yes">`).
+   - The sequence number does not advance between the fragments, ensuring that the following measure is correctly numbered (e.g. `number="8"`).
+3. **Complementary Final Measures**:
+   - When an opening pickup measure exists and the piece ends with a partial measure completing the meter, the final measure is emitted with `implicit="yes"`.
+   - Downstream processors must not pad synthetic rests into `implicit="yes"` partial measures.
+
+### The Algorithm (`computeMeasurePlans` in `src/converters/abc2xml/musicXml4.ts`)
+1. In a pre-serialization pass across all voices:
+   - For each measure index, compute voice durations $\text{dur}(V, m)$ and obtain the maximum duration among active voices.
+   - Compare measure duration against nominal meter duration $M = \text{meterNum} / \text{meterDen}$.
+2. Detect pickup:
+   - If measure 0 has $0 < \text{duration} < M$, flag measure 0 as `isPickup = true`, assign `number = "0"`, and set `implicit = true`.
+3. Detect split repeat fragments:
+   - If a measure duration is less than $M$ and adjacent to a repeat barline, or if two adjacent partial measures sum to $M$:
+     - Both fragments share the same base measure number.
+     - Both fragments receive `implicit = true`.
+4. Sequentially advance measure numbering:
+   - Start counter at 1 (or 0 if pickup exists).
+   - Only advance counter after complete measures or after the final fragment of a split measure.

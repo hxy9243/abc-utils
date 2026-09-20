@@ -39,6 +39,7 @@ flowchart TD
 - Emits fully-formed, schema-compliant MusicXML 4.0 / 3.1 documents.
 - Manages multi-voice `<backup>` and `<forward>` timeline synchronization.
 - Maps decorations to dynamics, articulations, ornaments, technical notations, and guitar chords into `<harmony>`.
+- Analyzes measure durations (`computeMeasurePlans`) to handle anacrusis (pickup measures as `<measure number="0" implicit="yes">`) and split repeat measures (sharing measure numbers with `implicit="yes"` across repeat barlines).
 
 ---
 
