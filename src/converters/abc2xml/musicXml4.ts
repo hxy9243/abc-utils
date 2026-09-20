@@ -330,12 +330,6 @@ export function computeMeasurePlans(
   } else {
     plans.push({
       number: String(currentMeasureNum++),
-      implicit:
-        !metas[0]!.isUnmetered &&
-        metas[0]!.duration.compare(0) > 0 &&
-        metas[0]!.duration.compare(metas[0]!.meterDuration) < 0
-          ? true
-          : undefined,
     });
   }
 
@@ -370,9 +364,10 @@ export function computeMeasurePlans(
         implicit: true,
       });
     } else {
+      const isComplementaryFinal = isPickup0 && mIdx === maxMeasures - 1 && isPartial;
       plans.push({
         number: String(currentMeasureNum++),
-        implicit: isPartial ? true : undefined,
+        implicit: isComplementaryFinal ? true : undefined,
       });
     }
   }
