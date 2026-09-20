@@ -1,4 +1,4 @@
-import { AbcTuneAST, AbcNoteAST, AbcChordAST, AbcRestAST, AbcBarlineAST, AbcLyricSyllable } from '../../parser/ast.js';
+import { AbcTuneAST, AbcNoteAST, AbcChordAST, AbcRestAST, AbcBarlineAST, AbcLyricSyllable, AbcMeasureAST } from '../../parser/ast.js';
 import { XmlDocument, XmlNode } from './xmlBuilder.js';
 import { WeavedScore, WeavedPart, VoiceRoute, weaveScore } from './scoreWeaver.js';
 import { Rational } from '../../core/rational.js';
@@ -72,6 +72,9 @@ export function serializeToMusicXml4(ast: AbcTuneAST, options: Abc2XmlOptions = 
   // 5. Calculate Divisions (LCM across all note durations)
   const divisions = calculateScoreDivisions(ast, defaultUnitLength);
 
+  // Measure Plans (pickup detection, split measures, numbering)
+  const measurePlans = computeMeasurePlans(ast, defaultUnitLength, defaultMeterInfo);
+
   // 6. Serialize Each Part
   for (const part of weaved.parts) {
     const partNode = doc.root.ele('part', { id: part.id });
@@ -80,10 +83,16 @@ export function serializeToMusicXml4(ast: AbcTuneAST, options: Abc2XmlOptions = 
       defaultKeyInfo,
       defaultMeterInfo,
       defaultUnitLength,
+      measurePlans,
     });
   }
 
   return doc.toString(indent);
+}
+
+export interface MeasurePlan {
+  number: string;
+  implicit?: boolean;
 }
 
 interface SerializationContext {
@@ -91,6 +100,7 @@ interface SerializationContext {
   defaultKeyInfo: KeySignatureInfo;
   defaultMeterInfo: ReturnType<typeof parseMeter>;
   defaultUnitLength: Rational;
+  measurePlans: MeasurePlan[];
 }
 
 function calculateScoreDivisions(ast: AbcTuneAST, unitLength: Rational): number {
@@ -169,6 +179,207 @@ function advanceTuplet(activeTuplet: TupletState | null): TupletInfo {
   };
 }
 
+function computeVoiceMeasureDuration(
+  measure: AbcMeasureAST,
+  unitLength: Rational,
+  meterDur: Rational
+): Rational {
+  let totalDur = Rational.zero();
+  let activeTuplet: { p: number; q: number; r: number; count: number } | null = null;
+
+  for (const el of measure.elements) {
+    if (el.kind === 'tuplet-start') {
+      activeTuplet = { p: el.p, q: el.q, r: el.r, count: 0 };
+      continue;
+    }
+
+    if (el.kind === 'note') {
+      if (el.isGrace) continue;
+      let elDur = new Rational(el.duration.numerator, el.duration.denominator);
+      if (el.brokenRhythm) {
+        elDur = applyBrokenRhythm(elDur, el.brokenRhythm);
+      }
+      if (activeTuplet) {
+        elDur = elDur.mul(new Rational(activeTuplet.q, activeTuplet.p));
+        activeTuplet.count++;
+        if (activeTuplet.count === activeTuplet.r) activeTuplet = null;
+      }
+      totalDur = totalDur.add(elDur.mul(unitLength));
+    } else if (el.kind === 'chord') {
+      let elDur = new Rational(el.duration.numerator, el.duration.denominator);
+      if (el.brokenRhythm) {
+        elDur = applyBrokenRhythm(elDur, el.brokenRhythm);
+      }
+      if (activeTuplet) {
+        elDur = elDur.mul(new Rational(activeTuplet.q, activeTuplet.p));
+        activeTuplet.count++;
+        if (activeTuplet.count === activeTuplet.r) activeTuplet = null;
+      }
+      totalDur = totalDur.add(elDur.mul(unitLength));
+    } else if (el.kind === 'rest') {
+      if (el.restType === 'multimeasure') {
+        totalDur = totalDur.add(meterDur.mul(el.measureCount || 1));
+      } else {
+        let elDur = new Rational(el.duration.numerator, el.duration.denominator);
+        if (activeTuplet) {
+          elDur = elDur.mul(new Rational(activeTuplet.q, activeTuplet.p));
+          activeTuplet.count++;
+          if (activeTuplet.count === activeTuplet.r) activeTuplet = null;
+        }
+        totalDur = totalDur.add(elDur.mul(unitLength));
+      }
+    }
+  }
+
+  return totalDur;
+}
+
+export function computeMeasurePlans(
+  ast: AbcTuneAST,
+  defaultUnitLength: Rational,
+  defaultMeterInfo: ReturnType<typeof parseMeter>
+): MeasurePlan[] {
+  const maxMeasures = Math.max(0, ...ast.voices.map((v) => v.measures.length));
+  if (maxMeasures === 0) return [];
+
+  interface MeasureMeta {
+    duration: Rational;
+    meterDuration: Rational;
+    isUnmetered: boolean;
+    hasRightRepeat: boolean;
+    hasLeftRepeat: boolean;
+  }
+
+  const metas: MeasureMeta[] = [];
+  let currentMeterInfo = defaultMeterInfo;
+  let currentUnitLength = defaultUnitLength;
+
+  for (let mIdx = 0; mIdx < maxMeasures; mIdx++) {
+    // Check for inline header changes in any voice for this measure
+    for (const voice of ast.voices) {
+      const measure = voice.measures[mIdx];
+      if (!measure) continue;
+      for (const el of measure.elements) {
+        if (el.kind === 'inline-field') {
+          if (el.key === 'M') {
+            currentMeterInfo = parseMeter(el.value);
+          } else if (el.key === 'L') {
+            currentUnitLength = getDefaultUnitLength(currentMeterInfo.raw, el.value);
+          }
+        }
+      }
+    }
+
+    const meterDuration = currentMeterInfo.isUnmetered
+      ? Rational.zero()
+      : new Rational(currentMeterInfo.beats, currentMeterInfo.beatType);
+
+    let maxVoiceDur = Rational.zero();
+    let hasRightRepeat = false;
+    let hasLeftRepeat = false;
+
+    for (const voice of ast.voices) {
+      const measure = voice.measures[mIdx];
+      if (!measure) continue;
+
+      if (measure.rightBarline) {
+        if (
+          measure.rightBarline.type === 'end-repeat' ||
+          measure.rightBarline.type === 'double-repeat'
+        ) {
+          hasRightRepeat = true;
+        }
+      }
+      if (measure.leftBarline) {
+        if (
+          measure.leftBarline.type === 'start-repeat' ||
+          measure.leftBarline.type === 'double-repeat'
+        ) {
+          hasLeftRepeat = true;
+        }
+      }
+
+      const voiceDur = computeVoiceMeasureDuration(measure, currentUnitLength, meterDuration);
+      if (voiceDur.compare(maxVoiceDur) > 0) {
+        maxVoiceDur = voiceDur;
+      }
+    }
+
+    metas.push({
+      duration: maxVoiceDur,
+      meterDuration,
+      isUnmetered: !!currentMeterInfo.isUnmetered,
+      hasRightRepeat,
+      hasLeftRepeat,
+    });
+  }
+
+  const plans: MeasurePlan[] = [];
+  let currentMeasureNum = 1;
+
+  // Check if measure 0 is a pickup measure
+  const isPickup0 =
+    maxMeasures >= 2 &&
+    !metas[0]!.isUnmetered &&
+    metas[0]!.duration.compare(0) > 0 &&
+    metas[0]!.duration.compare(metas[0]!.meterDuration) < 0;
+
+  if (isPickup0) {
+    plans.push({ number: '0', implicit: true });
+    currentMeasureNum = 1;
+  } else {
+    plans.push({
+      number: String(currentMeasureNum++),
+      implicit:
+        !metas[0]!.isUnmetered &&
+        metas[0]!.duration.compare(0) > 0 &&
+        metas[0]!.duration.compare(metas[0]!.meterDuration) < 0
+          ? true
+          : undefined,
+    });
+  }
+
+  for (let mIdx = 1; mIdx < maxMeasures; mIdx++) {
+    const meta = metas[mIdx]!;
+    const prevMeta = metas[mIdx - 1]!;
+    const prevPlan = plans[mIdx - 1]!;
+
+    const isPartial =
+      !meta.isUnmetered &&
+      meta.duration.compare(0) > 0 &&
+      meta.duration.compare(meta.meterDuration) < 0;
+
+    const prevIsPartial =
+      !prevMeta.isUnmetered &&
+      prevMeta.duration.compare(0) > 0 &&
+      prevMeta.duration.compare(prevMeta.meterDuration) < 0;
+
+    const canBeContinuation = !(mIdx === 1 && isPickup0);
+    const isContinuation =
+      canBeContinuation &&
+      prevIsPartial &&
+      isPartial &&
+      (prevMeta.hasRightRepeat ||
+        meta.hasLeftRepeat ||
+        prevMeta.duration.add(meta.duration).compare(meta.meterDuration) <= 0);
+
+    if (isContinuation) {
+      prevPlan.implicit = true;
+      plans.push({
+        number: prevPlan.number,
+        implicit: true,
+      });
+    } else {
+      plans.push({
+        number: String(currentMeasureNum++),
+        implicit: isPartial ? true : undefined,
+      });
+    }
+  }
+
+  return plans;
+}
+
 function serializePart(
   part: WeavedPart,
   _weaved: WeavedScore,
@@ -190,8 +401,12 @@ function serializePart(
   const pendingTiesByVoice = new Map<string, Map<string, number>>();
 
   for (let mIdx = 0; mIdx < maxMeasures; mIdx++) {
-    const measureNumber = mIdx + 1;
-    const measureNode = partNode.ele('measure', { number: measureNumber });
+    const plan = ctx.measurePlans[mIdx] ?? { number: String(mIdx + 1) };
+    const measureAttrs: Record<string, string | number | boolean> = { number: plan.number };
+    if (plan.implicit) {
+      measureAttrs.implicit = 'yes';
+    }
+    const measureNode = partNode.ele('measure', measureAttrs);
 
     // Accidental memory for this measure: step -> octave -> alter
     const accidentalMemory = new Map<string, number>();

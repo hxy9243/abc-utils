@@ -300,4 +300,48 @@ P D T E |]
     expect(res.xml).toContain('<inverted-mordent/>');
     expect(res.xml).toContain('<trill-mark/>');
   });
+
+  it('should export pickup measures with number="0" and implicit="yes"', () => {
+    const abc = `
+X:1
+T:Pickup Test
+M:4/4
+L:1/4
+K:C
+C | D E F G | A B c d |
+`;
+    const res = abc2xml(abc);
+    expect(res.xml).toContain('<measure number="0" implicit="yes">');
+    expect(res.xml).toContain('<measure number="1">');
+    expect(res.xml).toContain('<measure number="2">');
+    // Measure 1 should not have implicit="yes"
+    const m1Match = res.xml.match(/<measure number="1"[^>]*>/);
+    expect(m1Match?.[0]).toBe('<measure number="1">');
+  });
+
+  it('should export split repeat measures with shared numbering and implicit="yes"', () => {
+    const abc = `
+X:1
+T:Split Measure Repeat
+M:4/4
+L:1/4
+K:C
+C D E F | G A :| B c | d e f g |
+`;
+    const res = abc2xml(abc);
+    // Measure 1: full (C D E F)
+    expect(res.xml).toContain('<measure number="1">');
+    // Measure 2a: partial (G A :|), 2 beats
+    expect(res.xml).toContain('<measure number="2" implicit="yes">');
+    // Next full measure should be 3
+    expect(res.xml).toContain('<measure number="3">');
+
+    // Both halves of measure 2 should be numbered "2" with implicit="yes"
+    const m2Matches = res.xml.match(/<measure number="2"[^>]*>/g);
+    expect(m2Matches).toEqual([
+      '<measure number="2" implicit="yes">',
+      '<measure number="2" implicit="yes">',
+    ]);
+  });
 });
+
